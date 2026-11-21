@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#1E1A2B">
+<title>Room Racers controller</title>
+<style>
+:root{
+  --bg:#E9F2EC; --panel:#FFFFFF; --ink:#1E1A2B; --muted:#55506A; --line:#CFD8D2; --field:#FFFFFF;
+  --steer:#1E1A2B; --steer-ink:#FFFFFF; --go:#2ECC71; --brake:#FF4D4D; --tape:#FFD23F; --me:#FFD23F;
+  color-scheme:light;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#14111D; --panel:#221D31; --ink:#F3F0FA; --muted:#B6AFCB; --line:#3B3452; --field:#2D2741;
+    --steer:#F3F0FA; --steer-ink:#1E1A2B; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#14111D; --panel:#221D31; --ink:#F3F0FA; --muted:#B6AFCB; --line:#3B3452; --field:#2D2741;
+  --steer:#F3F0FA; --steer-ink:#1E1A2B; color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{height:100%;scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;height:100%;background:var(--bg);color:var(--ink);overflow:hidden;
+  font-family:ui-rounded,"Arial Rounded MT Bold","Nunito","Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;
+  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+.screen{height:100%}
+.screen[hidden]{display:none}
+
+/* Join */
+#joinScreen{display:flex;align-items:center;justify-content:center;padding:20px;overflow:auto}
+.card{width:100%;max-width:420px;background:var(--panel);border:4px solid #1E1A2B;border-radius:22px;padding:28px 22px 22px;
+  position:relative;box-shadow:8px 10px 0 rgba(18,14,30,.45)}
+.tape{position:absolute;top:-15px;left:50%;width:140px;height:30px;transform:translateX(-50%) rotate(-3deg);background:var(--tape);border:3px solid #1E1A2B}
+h1{font-size:40px;line-height:1;margin:4px 0 8px;font-weight:900}
+.sub{color:var(--muted);font-size:18px;margin:0 0 18px;line-height:1.4}
+label{display:block;font-weight:800;font-size:18px;margin:14px 0 6px}
+input{font:inherit;font-size:24px;font-weight:800;width:100%;padding:12px 14px;border:3px solid var(--line);border-radius:12px;
+  background:var(--field);color:var(--ink);-webkit-user-select:text;user-select:text}
+#code{text-transform:uppercase;letter-spacing:.3em;font-size:32px;text-align:center}
+input:focus{outline:4px solid var(--tape);outline-offset:2px;border-color:#1E1A2B}
+.big{font:inherit;font-size:26px;font-weight:900;width:100%;min-height:62px;margin-top:20px;border:3px solid #1E1A2B;border-radius:14px;
+  background:var(--tape);color:#1E1A2B;cursor:pointer}
+.big:disabled{opacity:.5}
+.error{color:#E2463C;font-weight:800;font-size:18px;min-height:1.4em;margin:12px 0 0}
+
+/* Controller */
+#padScreen{display:grid;grid-template-rows:auto 1fr;gap:10px;padding:10px;
+  padding-left:max(10px,env(safe-area-inset-left,0px));padding-right:max(10px,env(safe-area-inset-right,0px))}
+.bar{display:flex;align-items:center;gap:10px;background:var(--panel);border:3px solid var(--line);border-left:12px solid var(--me);
+  border-radius:14px;padding:8px 10px;min-height:52px}
+.me{font-weight:900;font-size:19px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:30%}
+.status{flex:1;font-weight:900;font-size:20px;text-align:center;line-height:1.15}
+.ping{font-size:13px;color:var(--muted);font-weight:800;white-space:nowrap}
+.mini{font:inherit;font-size:15px;font-weight:900;min-height:40px;padding:6px 10px;border-radius:10px;border:3px solid var(--line);
+  background:var(--bg);color:var(--ink);white-space:nowrap}
+.mini[aria-pressed="true"]{background:var(--go);color:#1E1A2B;border-color:#1E1A2B}
+
+.pad{display:grid;gap:10px;touch-action:none;min-height:0}
+.steer,.pedals{display:grid;gap:10px;min-height:0}
+.steer{grid-template-columns:1fr 1fr}
+.key{font:inherit;font-weight:900;border:4px solid #1E1A2B;border-radius:24px;display:flex;align-items:center;justify-content:center;
+  touch-action:none;min-height:0;cursor:pointer;box-shadow:0 7px 0 #1E1A2B;transform:translateY(0)}
+.key.on{transform:translateY(5px);box-shadow:0 2px 0 #1E1A2B;filter:brightness(1.12)}
+.key.left,.key.right{background:var(--steer);color:var(--steer-ink);font-size:min(16vw,16vh,96px)}
+.key.go{background:var(--go);color:#1E1A2B;font-size:min(9vw,10vh,56px)}
+.key.brake{background:var(--brake);color:#1E1A2B;font-size:min(6vw,7vh,36px)}
+.turn-hint{display:none;margin:0;text-align:center;color:var(--muted);font-weight:800;font-size:15px}
+
+/* Landscape: steering on the left thumb, pedals on the right */
+@media (orientation: landscape){
+  .pad{grid-template-columns:1.15fr 1fr}
+  .pedals{grid-template-rows:1fr 1.9fr}
+}
+/* Portrait: steering on top, pedals below */
+@media (orientation: portrait){
+  #padScreen{grid-template-rows:auto 1fr auto}
+  .pad{grid-template-rows:1fr 1fr}
+  .pedals{grid-template-columns:1fr 1.6fr}
+  .turn-hint{display:block}
+  .me{display:none}
+}
+@media (prefers-reduced-motion: reduce){.key,.key.on{transition:none}}
+</style>
+</head>
+<body>
+
+<main id="joinScreen" class="screen">
+  <div class="card">
+    <div class="tape" aria-hidden="true"></div>
+    <h1>Room Racers</h1>
+    <p class="sub">Type your name and the room code shown on the TV.</p>
+    <label for="name">Your name</label>
+    <input id="name" maxlength="12" autocomplete="nickname" enterkeyhint="next">
+    <label for="code">Room code</label>
+    <input id="code" maxlength="4" autocapitalize="characters" autocomplete="off" spellcheck="false" enterkeyhint="go">
+    <button class="big" id="joinBtn">Join race</button>
+    <p class="error" id="joinError" role="alert"></p>
+  </div>
+</main>
+
+<main id="padScreen" class="screen" hidden>
+  <header class="bar">
+    <span class="me" id="me">Racer</span>
+    <span class="status" id="status" aria-live="polite">Connecting</span>
+    <span class="ping" id="ping"></span>
+    <button class="mini" id="autoBtn" aria-pressed="false">Auto go</button>
+    <button class="mini" id="fsBtn">Full screen</button>
+  </header>
+  <div class="pad" id="pad">
+    <div class="steer">
+      <button class="key left" data-k="left" aria-label="Steer left">◀</button>
+      <button class="key right" data-k="right" aria-label="Steer right">▶</button>
+    </div>
+    <div class="pedals">
+      <button class="key brake" data-k="brake">Brake</button>
+      <button class="key go" data-k="go">Go</button>
+    </div>
+  </div>
+  <p class="turn-hint">Turn your phone sideways for two-thumb control</p>
+</main>
+
+<script>
+(() => {
+'use strict';
+const $ = s => document.querySelector(s);
+const ordinal = p => ['1st','2nd','3rd','4th','5th','6th'][p - 1] || p + 'th';
+const store = {
+  get(k){ try { return localStorage.getItem('rr_' + k); } catch { return null; } },
+  set(k, v){ try { localStorage.setItem('rr_' + k, v); } catch {} },
+  del(k){ try { localStorage.removeItem('rr_' + k); } catch {} }
+};
+
+const S = {
+  ws: null, joined: false, stop: false, code: '', name: '', id: null,
+  inp: { s: 0, g: 0, b: 0 }, auto: false, lastSent: '', wake: null
+};
+
+/* ---------- Join screen ---------- */
+const params = new URLSearchParams(location.search);
+$('#name').value = store.get('name') || '';
+$('#code').value = (params.get('code') || store.get('code') || '').toUpperCase().slice(0, 4);
+$('#code').addEventListener('input', e => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4); });
+$('#name').addEventListener('keydown', e => { if (e.key === 'Enter') $('#code').focus(); });
+$('#code').addEventListener('keydown', e => { if (e.key === 'Enter') tryJoin(); });
+$('#joinBtn').addEventListener('click', tryJoin);
+
+function tryJoin(){
+  const name = $('#name').value.trim().slice(0, 12);
+  const code = $('#code').value.trim().toUpperCase();
+  if (!name){ $('#joinError').textContent = 'Type your name first.'; $('#name').focus(); return; }
+  if (code.length !== 4){ $('#joinError').textContent = 'The room code has 4 letters.'; $('#code').focus(); return; }
+  S.name = name; S.code = code; S.stop = false;
+  if (store.get('code') !== code) store.del('rid');
+  S.id = store.get('rid');
+  store.set('name', name); store.set('code', code);
+  $('#joinError').textContent = '';
+  $('#joinBtn').disabled = true; $('#joinBtn').textContent = 'Joining';
+  connect();
+}
+
+function backToJoin(msg){
+  S.stop = true; S.joined = false;
+  if (S.ws) try { S.ws.close(); } catch {}
+  $('#padScreen').hidden = true; $('#joinScreen').hidden = false;
+  $('#joinBtn').disabled = false; $('#joinBtn').textContent = 'Join race';
+  $('#joinError').textContent = msg || '';
+}
+
+/* ---------- Connection ---------- */
+function connect(){
+  const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+  S.ws = ws;
+  ws.onopen = () => ws.send(JSON.stringify({ t: 'join', code: S.code, name: S.name, rid: S.id }));
+  ws.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch { return; } onMsg(m); };
+  ws.onclose = () => {
+    if (S.ws !== ws) return;
+    if (S.stop) return;
+    if (!S.joined){ backToJoin('Could not reach the game. Check the link and try again.'); return; }
+    setStatus('Reconnecting');
+    setTimeout(() => { if (!S.stop && (!S.ws || S.ws.readyState > 1)) connect(); }, 1000);
+  };
+}
+function send(o){ if (S.ws && S.ws.readyState === 1) S.ws.send(JSON.stringify(o)); }
+
+function onMsg(m){
+  if (m.t === 'joined'){
+    S.joined = true; S.id = m.id; store.set('rid', m.id);
+    $('#joinScreen').hidden = true; $('#padScreen').hidden = false;
+    $('#me').textContent = S.name;
+    setStatus('You’re in! Waiting for the race');
+    keepAwake();
+    sendInput(true);
+  } else if (m.t === 'rejected'){
+    store.del('rid');
+    const why = {
+      nocode: 'No room with that code. Check the TV.',
+      full: 'That race is full. Six players is the most.',
+      racing: 'A race is on. Join when it finishes.'
+    }[m.reason] || 'Could not join that room.';
+    backToJoin(why);
+  } else if (m.t === 'lobby'){
+    if (m.colour) document.documentElement.style.setProperty('--me', m.colour);
+    if (m.name){ S.name = m.name; $('#me').textContent = m.name; }
+    if (m.state === 'lobby') setStatus('You’re in! Waiting for the race');
+    if (m.state === 'countdown') setStatus('Get ready!');
+  } else if (m.t === 'status'){
+    if (m.colour) document.documentElement.style.setProperty('--me', m.colour);
+    if (m.state === 'countdown') setStatus('Get ready!');
+    else if (m.state === 'paused') setStatus('Paused');
+    else if (m.state === 'results') setStatus('You came ' + ordinal(m.place) + '!');
+    else if (m.finished) setStatus('Finished ' + ordinal(m.finishPlace) + '!');
+    else if (m.state === 'race') setStatus(ordinal(m.place) + ' of ' + m.total + ', lap ' + m.lap + '/' + m.laps);
+  } else if (m.t === 'buzz'){
+    if (navigator.vibrate) navigator.vibrate(m.ms);
+  } else if (m.t === 'notice'){
+    setStatus(m.text);
+  } else if (m.t === 'ended'){
+    store.del('rid');
+    backToJoin('The TV ended the game. Ask for the new room code.');
+  } else if (m.t === 'pong'){
+    const ms = Math.round(performance.now() - m.ts);
+    const el = $('#ping'); el.textContent = ms + ' ms';
+    el.style.color = ms > 150 ? '#E2463C' : '';
+  }
+}
+function setStatus(t){ $('#status').textContent = t; }
+
+setInterval(() => send({ t: 'ping', ts: performance.now() }), 2000);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || !S.joined || S.stop) return;
+  keepAwake();
+  if (!S.ws || S.ws.readyState > 1) connect();
+});
+
+/* ---------- Controls ---------- */
+const pad = $('#pad');
+const active = new Map();   // finger -> button
+function keyAt(x, y){
+  const el = document.elementFromPoint(x, y);
+  const b = el && el.closest('[data-k]');
+  return b ? b.dataset.k : null;
+}
+pad.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  try { pad.setPointerCapture(e.pointerId); } catch {}
+  const k = keyAt(e.clientX, e.clientY);
+  active.set(e.pointerId, k);
+  if (k && navigator.vibrate) navigator.vibrate(8);
+  update();
+}, { passive: false });
+pad.addEventListener('pointermove', e => {
+  if (!active.has(e.pointerId)) return;
+  const k = keyAt(e.clientX, e.clientY);
+  if (k !== active.get(e.pointerId)){ active.set(e.pointerId, k); update(); }
+});
+['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t =>
+  pad.addEventListener(t, e => { if (active.delete(e.pointerId)) update(); }));
+pad.addEventListener('contextmenu', e => e.preventDefault());
+document.addEventListener('touchmove', e => { if (!$('#padScreen').hidden) e.preventDefault(); }, { passive: false });
+
+function update(){
+  const held = new Set(active.values());
+  document.querySelectorAll('[data-k]').forEach(b => b.classList.toggle('on', held.has(b.dataset.k)));
+  const brake = held.has('brake');
+  S.inp.s = (held.has('left') ? -1 : 0) + (held.has('right') ? 1 : 0);
+  S.inp.b = brake ? 1 : 0;
+  S.inp.g = (held.has('go') || S.auto) && !brake ? 1 : 0;
+  sendInput(false);
+}
+function sendInput(force){
+  const msg = JSON.stringify({ t: 'in', s: S.inp.s, g: S.inp.g, b: S.inp.b });
+  if (force || msg !== S.lastSent){ S.lastSent = msg; if (S.ws && S.ws.readyState === 1) S.ws.send(msg); }
+}
+setInterval(() => sendInput(true), 150);   // heartbeat so the TV knows the phone is still here
+
+// Lose all fingers if the page is hidden, so the car never sticks on Go
+document.addEventListener('visibilitychange', () => { if (document.visibilityState !== 'visible'){ active.clear(); update(); } });
+window.addEventListener('blur', () => { active.clear(); update(); });
+
+/* ---------- Extras ---------- */
+S.auto = store.get('auto') === '1';
+$('#autoBtn').setAttribute('aria-pressed', String(S.auto));
+$('#autoBtn').addEventListener('click', () => {
+  S.auto = !S.auto; store.set('auto', S.auto ? '1' : '0');
+  $('#autoBtn').setAttribute('aria-pressed', String(S.auto));
+  update();
+});
+
+const canFull = !!document.documentElement.requestFullscreen;
+if (!canFull) $('#fsBtn').hidden = true;
+$('#fsBtn').addEventListener('click', async () => {
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else {
+      await document.documentElement.requestFullscreen();
+      if (screen.orientation && screen.orientation.lock) await screen.orientation.lock('landscape').catch(() => {});
+    }
+  } catch {}
+});
+
+async function keepAwake(){
+  try {
+    if ('wakeLock' in navigator && (!S.wake || S.wake.released)) S.wake = await navigator.wakeLock.request('screen');
+  } catch {}
+}
+
+if ($('#name').value && $('#code').value.length === 4 && params.get('code')) $('#joinBtn').focus();
+else if (!$('#name').value) $('#name').focus();
+})();
+</script>
+</body>
+</html>
