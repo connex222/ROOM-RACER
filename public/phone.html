@@ -75,6 +75,30 @@ input:focus{outline:4px solid var(--tape);outline-offset:2px;border-color:#1E1A2
 .turn-hint{display:none;margin:0;text-align:center;color:var(--muted);font-weight:800;font-size:15px}
 
 /* Landscape: steering on the left thumb, pedals on the right */
+/* Car and driver picker */
+.pick{display:grid;gap:10px;min-height:0}
+.chooser{background:var(--panel);border:3px solid var(--line);border-radius:18px;padding:8px 10px;display:grid;
+  grid-template-rows:auto 1fr auto;min-height:0;text-align:center}
+.ch-label{font-weight:900;font-size:16px;color:var(--muted)}
+.ch-row{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:6px;min-height:0}
+.ch-row img{width:100%;height:100%;max-height:min(30vh,170px);object-fit:contain;min-height:0}
+.arrow{font:inherit;font-weight:900;font-size:30px;width:58px;height:58px;border-radius:50%;border:4px solid #1E1A2B;
+  background:var(--steer);color:var(--steer-ink);box-shadow:0 5px 0 #1E1A2B;touch-action:manipulation}
+.arrow:active{transform:translateY(4px);box-shadow:0 1px 0 #1E1A2B}
+.arrow:disabled{opacity:.35}
+.ch-name{font-weight:900;font-size:20px;line-height:1.1}
+.ready{font:inherit;font-weight:900;font-size:26px;min-height:64px;border:4px solid #1E1A2B;border-radius:18px;
+  background:var(--tape);color:#1E1A2B;box-shadow:0 6px 0 #1E1A2B;touch-action:manipulation}
+.ready[aria-pressed="true"]{background:var(--go)}
+.ready:active{transform:translateY(5px);box-shadow:0 1px 0 #1E1A2B}
+.me-av{width:40px;height:40px;border-radius:50%;flex:none}
+@media (orientation: landscape){
+  .pick{grid-template-columns:1fr 1fr;grid-template-rows:1fr auto}
+  .pick .ready{grid-column:1 / -1}
+}
+@media (orientation: portrait){
+  .pick{grid-template-rows:1fr 1fr auto}
+}
 @media (orientation: landscape){
   .pad{grid-template-columns:1.15fr 1fr}
   .pedals{grid-template-rows:1fr 1.9fr}
@@ -104,19 +128,20 @@ input:focus{outline:4px solid var(--tape);outline-offset:2px;border-color:#1E1A2
     <button class="big" id="joinBtn">Join race</button>
     <p class="stage" id="joinStage" aria-live="polite"></p>
     <p class="error" id="joinError" role="alert"></p>
-    <p class="ver">Version 0.3.4 · <a href="/test" style="color:inherit">connection test</a></p>
+    <p class="ver">Version 0.4.0 · <a href="/test" style="color:inherit">connection test</a></p>
   </div>
 </main>
 
 <main id="padScreen" class="screen" hidden>
   <header class="bar">
+    <img class="me-av" id="meAv" alt="">
     <span class="me" id="me">Racer</span>
     <span class="status" id="status" aria-live="polite">Connecting</span>
     <span class="ping" id="ping"></span>
     <button class="mini" id="autoBtn" aria-pressed="false">Auto go</button>
     <button class="mini" id="fsBtn">Full screen</button>
   </header>
-  <div class="pad" id="pad">
+  <div class="pad" id="pad" hidden>
     <div class="steer">
       <button class="key left" data-k="left" aria-label="Steer left">◀</button>
       <button class="key right" data-k="right" aria-label="Steer right">▶</button>
@@ -126,12 +151,274 @@ input:focus{outline:4px solid var(--tape);outline-offset:2px;border-color:#1E1A2
       <button class="key go" data-k="go">Go</button>
     </div>
   </div>
+  <div class="pick" id="pick" hidden>
+    <section class="chooser">
+      <div class="ch-label">Your car</div>
+      <div class="ch-row">
+        <button class="arrow" data-pick="car" data-d="-1" aria-label="Previous car">◀</button>
+        <img id="carImg" alt="">
+        <button class="arrow" data-pick="car" data-d="1" aria-label="Next car">▶</button>
+      </div>
+      <div class="ch-name" id="carName"></div>
+    </section>
+    <section class="chooser">
+      <div class="ch-label">Your driver</div>
+      <div class="ch-row">
+        <button class="arrow" data-pick="driver" data-d="-1" aria-label="Previous driver">◀</button>
+        <img id="driverImg" alt="">
+        <button class="arrow" data-pick="driver" data-d="1" aria-label="Next driver">▶</button>
+      </div>
+      <div class="ch-name" id="driverName"></div>
+    </section>
+    <button class="ready" id="readyBtn" aria-pressed="false">I’m ready</button>
+  </div>
   <p class="turn-hint">Turn your phone sideways for two-thumb control</p>
 </main>
 
 <script>
 (() => {
 'use strict';
+
+/* =====================================================================
+   SPRITES: cars and drivers.
+   Uses Shaun's ChatGPT art from /art when a file exists for an ID,
+   otherwise draws a stand-in in code. Shared by the TV and the phone.
+   ===================================================================== */
+const SPRITES = (() => {
+  const INK = '#1E1A2B';
+  const CARS = [
+    { id: 'C01', name: 'Toaster Racer' },   { id: 'C02', name: 'Kettle Kart' },
+    { id: 'C03', name: 'Rubber Duck Dragster' }, { id: 'C04', name: 'Hairdryer Hotrod' },
+    { id: 'C05', name: 'Remote Rocket' },   { id: 'C06', name: 'Slipper Speeder' },
+    { id: 'C07', name: 'Teddy Truck' },     { id: 'C08', name: 'Skateboard Streak' },
+    { id: 'C09', name: 'Paint Tin Tank' },  { id: 'C10', name: 'Drill Dart' },
+    { id: 'C11', name: 'Watering Can Cruiser' }, { id: 'C12', name: 'Flowerpot Flyer' }
+  ];
+  const DRIVERS = [
+    { name: 'Crumbs',    ids: ['D01', 'D02'], bg: '#FFE7C2', scarf: '#E2463C' },
+    { name: 'Dusty',     ids: ['D03', 'D04'], bg: '#DDE7FF', scarf: '#3D8BFF' },
+    { name: 'Nana Pegs', ids: ['D05', 'D06'], bg: '#FFE0EC', scarf: '#B15DFF' },
+    { name: 'Oddsock',   ids: ['D07', 'D08'], bg: '#E6F7D9', scarf: '#2ECC71' },
+    { name: 'Bolt',      ids: ['D09', 'D10'], bg: '#E4E9EE', scarf: '#FF9F1C' },
+    { name: 'Fizz',      ids: ['D11', 'D12'], bg: '#D6F3FA', scarf: '#FF5DA2' },
+    { name: 'Spindle',   ids: ['D13', 'D14'], bg: '#EFE3FF', scarf: '#FFD23F' },
+    { name: 'Pip',       ids: ['D15', 'D16'], bg: '#F3EBD8', scarf: '#22D3E6' }
+  ];
+
+  /* ---------- ChatGPT art ---------- */
+  const art = {};          // id -> loaded Image
+  let artReady = Promise.resolve();
+  function loadArt(){
+    artReady = fetch('/art/list', { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : [])
+      .then(list => Promise.all((Array.isArray(list) ? list : []).map(id => new Promise(res => {
+        const img = new Image();
+        img.onload = () => { art[id] = img; res(); };
+        img.onerror = () => res();
+        img.src = '/art/' + id;
+      }))))
+      .catch(() => {});
+    return artReady;
+  }
+
+  /* ---------- drawing helpers ---------- */
+  function rr(c, x, y, w, h, r){
+    r = Math.min(r, w / 2, h / 2);
+    c.beginPath(); c.moveTo(x + r, y);
+    c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r);
+    c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath();
+  }
+  function circle(c, x, y, r){ c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); }
+  function fillStroke(c, fill, lw){ c.fillStyle = fill; c.fill(); c.lineWidth = lw || 3.5; c.strokeStyle = INK; c.stroke(); }
+  function wheels(c, xs, ys){
+    c.fillStyle = INK;
+    (xs || [-17, 11]).forEach(x => (ys || [-21, 14]).forEach(y => { rr(c, x, y, 14, 7, 3); c.fill(); }));
+  }
+  function cockpit(c, x){ c.fillStyle = INK; circle(c, x || 0, 0, 6.5); c.fill(); }
+
+  /* ---------- 12 stand-in cars: top-down, nose pointing +x, about 60 long ---------- */
+  const CAR_DRAW = [
+    // C01 Toaster
+    (c, col) => { wheels(c); rr(c, -33, -13, 10, 26, 4); fillStroke(c, '#D9A55B', 3);
+      rr(c, -26, -15, 52, 30, 9); fillStroke(c, '#DDE3E9', 4);
+      c.fillStyle = col; c.fillRect(-24, -5, 48, 10);
+      c.fillStyle = '#FFFFFF'; rr(c, 14, -10, 8, 20, 3); c.fill(); cockpit(c, -2); },
+    // C02 Kettle
+    (c, col) => { wheels(c); c.beginPath(); c.moveTo(18, -6); c.lineTo(34, -2); c.lineTo(34, 2); c.lineTo(18, 6); c.closePath(); fillStroke(c, '#C9D2D8', 3);
+      c.beginPath(); c.arc(-26, 0, 11, Math.PI * 0.5, Math.PI * 1.5); c.lineWidth = 6; c.strokeStyle = INK; c.stroke();
+      circle(c, -2, 0, 20); fillStroke(c, '#F2F2F0', 4);
+      c.lineWidth = 5; c.strokeStyle = col; circle(c, -2, 0, 14); c.stroke(); cockpit(c, -2); },
+    // C03 Rubber duck
+    (c, col) => { wheels(c); c.beginPath(); c.ellipse(-4, 0, 28, 17, 0, 0, Math.PI * 2); fillStroke(c, '#FFD23F', 4);
+      c.beginPath(); c.moveTo(26, -5); c.lineTo(37, 0); c.lineTo(26, 5); c.closePath(); fillStroke(c, '#FF9F1C', 3);
+      circle(c, 16, 0, 11); fillStroke(c, '#FFD23F', 3.5);
+      c.fillStyle = INK; circle(c, 19, -5, 2.5); c.fill(); circle(c, 19, 5, 2.5); c.fill();
+      c.fillStyle = col; c.fillRect(-26, -3, 20, 6); cockpit(c, -8); },
+    // C04 Hairdryer
+    (c, col) => { wheels(c); c.lineWidth = 4; c.strokeStyle = INK; c.beginPath();
+      for (let t = 0; t < 6.3; t += 0.3) c.lineTo(-30 - t * 1.6, Math.sin(t * 2) * 5); c.stroke();
+      rr(c, -4, -9, 38, 18, 6); fillStroke(c, '#FF5DA2', 3.5); rr(c, 28, -11, 8, 22, 3); fillStroke(c, '#C9D2D8', 3);
+      circle(c, -12, 0, 16); fillStroke(c, '#FF8BC0', 4); c.lineWidth = 5; c.strokeStyle = col; circle(c, -12, 0, 10); c.stroke(); cockpit(c, -12); },
+    // C05 TV remote
+    (c, col) => { wheels(c); rr(c, -30, -13, 60, 26, 10); fillStroke(c, '#2E2A3B', 4);
+      ['#E2463C', '#2ECC71', '#3D8BFF', '#FFD23F'].forEach((b, i) => { c.fillStyle = b; circle(c, 14 + (i % 2) * 8, -5 + Math.floor(i / 2) * 10, 3); c.fill(); });
+      c.fillStyle = col; c.fillRect(-26, -3, 26, 6); cockpit(c, -12); },
+    // C06 Slipper
+    (c, col) => { wheels(c); c.beginPath(); c.ellipse(0, 0, 32, 16, 0, 0, Math.PI * 2); fillStroke(c, '#9FB8FF', 4);
+      c.beginPath(); c.ellipse(16, 0, 15, 13, 0, 0, Math.PI * 2); fillStroke(c, '#C8D6FF', 3);
+      circle(c, 26, 0, 6); fillStroke(c, '#FFFFFF', 3); c.fillStyle = col; c.fillRect(-28, -3, 24, 6); cockpit(c, -10); },
+    // C07 Teddy truck
+    (c, col) => { wheels(c); rr(c, -30, -15, 46, 30, 10); fillStroke(c, '#B07A4A', 4);
+      circle(c, 22, -11, 6); fillStroke(c, '#B07A4A', 3); circle(c, 22, 11, 6); fillStroke(c, '#B07A4A', 3);
+      circle(c, 20, 0, 13); fillStroke(c, '#C99566', 3.5); c.fillStyle = INK; circle(c, 28, 0, 3); c.fill();
+      c.fillStyle = col; c.fillRect(-26, -4, 30, 8); cockpit(c, -8); },
+    // C08 Skateboard
+    (c, col) => { wheels(c, [-26, 18], [-17, 10]); rr(c, -36, -12, 72, 24, 12); fillStroke(c, '#D9A55B', 4);
+      rr(c, -28, -8, 56, 16, 8); c.fillStyle = '#3B3548'; c.fill(); c.fillStyle = col; c.fillRect(-24, -2, 48, 4); cockpit(c, 0); },
+    // C09 Paint tin
+    (c, col) => { wheels(c); circle(c, 0, 0, 22); fillStroke(c, '#C9D2D8', 4); circle(c, 0, 0, 17); fillStroke(c, col, 3);
+      c.fillStyle = col; [[-6, 21], [8, 21], [2, -21]].forEach(([x, y]) => { rr(c, x - 3, y - 2, 6, 9, 3); c.fill(); });
+      c.fillStyle = 'rgba(255,255,255,.5)'; circle(c, -6, -6, 5); c.fill(); cockpit(c, 2); },
+    // C10 Drill
+    (c, col) => { wheels(c); rr(c, 18, -3, 20, 6, 2); fillStroke(c, '#9AA3AE', 2.5);
+      rr(c, -28, -12, 48, 24, 7); fillStroke(c, '#FFD23F', 4); rr(c, -28, -12, 16, 24, 6); fillStroke(c, '#2E2A3B', 3.5);
+      c.fillStyle = col; c.fillRect(-8, -4, 24, 8); cockpit(c, 4); },
+    // C11 Watering can
+    (c, col) => { wheels(c); c.lineWidth = 7; c.strokeStyle = INK; c.beginPath(); c.moveTo(10, 0); c.lineTo(34, -8); c.stroke();
+      c.lineWidth = 4; c.strokeStyle = '#2ECC71'; c.stroke(); circle(c, 36, -9, 6); fillStroke(c, '#2ECC71', 3);
+      rr(c, -26, -16, 40, 32, 12); fillStroke(c, '#2ECC71', 4); c.fillStyle = col; c.fillRect(-22, -4, 32, 8); cockpit(c, -6); },
+    // C12 Flowerpot
+    (c, col) => { wheels(c); circle(c, -2, 0, 22); fillStroke(c, '#C8643C', 4); circle(c, -2, 0, 15); fillStroke(c, '#6B4A3A', 3);
+      ['#3E9E4A', '#57B85E', '#2F7D3A'].forEach((g, i) => { c.fillStyle = g; c.beginPath(); c.ellipse(-2 + (i - 1) * 7, (i - 1) * 6, 9, 5, i, 0, Math.PI * 2); c.fill(); });
+      c.lineWidth = 5; c.strokeStyle = col; circle(c, -2, 0, 21); c.stroke(); c.fillStyle = '#FF5DA2'; circle(c, 8, -4, 4); c.fill(); }
+  ];
+
+  /* Draws car `type` centred on 0,0 facing +x. ChatGPT art faces up, so it is turned a quarter. */
+  function drawCar(c, type, colour){
+    const def = CARS[type] || CARS[0], img = art[def.id];
+    if (img){
+      c.save(); c.rotate(Math.PI / 2);
+      c.drawImage(img, -40, -40, 80, 80);
+      c.restore();
+      return;
+    }
+    (CAR_DRAW[type] || CAR_DRAW[0])(c, colour);
+  }
+
+  /* ---------- 8 stand-in drivers: portraits on a 100 x 100 grid ---------- */
+  function goggles(c, y, win){
+    c.lineWidth = 5; c.strokeStyle = INK; c.beginPath(); c.moveTo(22, y); c.lineTo(78, y); c.stroke();
+    [40, 60].forEach(x => {
+      circle(c, x, y, 10); fillStroke(c, '#BFE9FF', 4);
+      c.fillStyle = INK; circle(c, x + 1, y + 1, win ? 3.2 : 4); c.fill();
+    });
+  }
+  function mouth(c, y, win){
+    c.lineWidth = 4; c.strokeStyle = INK; c.beginPath();
+    if (win){ c.arc(50, y - 2, 9, 0.1, Math.PI - 0.1); c.closePath(); c.fillStyle = '#7A2E3B'; c.fill(); c.stroke(); }
+    else { c.arc(50, y - 4, 7, 0.4, Math.PI - 0.4); c.stroke(); }
+  }
+  function scarf(c, col){
+    rr(c, 24, 80, 52, 13, 6); fillStroke(c, col, 4);
+    rr(c, 60, 84, 10, 16, 4); fillStroke(c, col, 3);
+  }
+  const DRIVER_DRAW = [
+    // Crumbs the mouse
+    (c, w) => { [[26, 30], [74, 30]].forEach(([x, y]) => { circle(c, x, y, 16); fillStroke(c, '#A9A9B4', 4); c.fillStyle = '#FFB3C7'; circle(c, x, y, 8); c.fill(); });
+      circle(c, 50, 56, 27); fillStroke(c, '#B9B9C4', 4); goggles(c, 50, w); c.fillStyle = '#FF7FA8'; circle(c, 50, 64, 4); c.fill();
+      c.lineWidth = 2; c.strokeStyle = INK; [[-1, 62], [1, 62]].forEach(([s]) => { c.beginPath(); c.moveTo(50 + s * 8, 66); c.lineTo(50 + s * 24, 62); c.stroke(); });
+      mouth(c, 74, w); },
+    // Dusty the dust bunny
+    (c, w) => { for (let a = 0; a < 12; a++){ const t = a * Math.PI / 6; circle(c, 50 + Math.cos(t) * 24, 56 + Math.sin(t) * 22, 12); fillStroke(c, '#C7CAD6', 3); }
+      circle(c, 50, 56, 25); c.fillStyle = '#C7CAD6'; c.fill(); goggles(c, 50, w); mouth(c, 70, w); },
+    // Nana Pegs the clothes peg
+    (c, w) => { rr(c, 34, 26, 32, 70, 14); fillStroke(c, '#E3C08B', 4); c.lineWidth = 3; c.strokeStyle = 'rgba(110,70,30,.5)'; c.beginPath(); c.moveTo(50, 70); c.lineTo(50, 96); c.stroke();
+      circle(c, 50, 22, 13); fillStroke(c, '#D8D8E0', 4); circle(c, 37, 32, 8); fillStroke(c, '#D8D8E0', 3); circle(c, 63, 32, 8); fillStroke(c, '#D8D8E0', 3);
+      goggles(c, 48, w); mouth(c, 66, w); },
+    // Oddsock
+    (c, w) => { rr(c, 30, 20, 40, 76, 18); c.save(); c.clip(); for (let y = 20; y < 100; y += 12){ c.fillStyle = (y / 12) % 2 < 1 ? '#FFFFFF' : '#2ECC71'; c.fillRect(30, y, 40, 12); } c.restore();
+      rr(c, 30, 20, 40, 76, 18); c.lineWidth = 4; c.strokeStyle = INK; c.stroke();
+      [40, 60].forEach(x => { circle(c, x, 46, 8); fillStroke(c, '#2E2A3B', 3); c.strokeStyle = '#FFFFFF'; c.lineWidth = 2; c.beginPath(); c.moveTo(x - 3, 43); c.lineTo(x + 3, 49); c.moveTo(x + 3, 43); c.lineTo(x - 3, 49); c.stroke(); });
+      c.lineWidth = 5; c.strokeStyle = INK; c.beginPath(); c.moveTo(24, 36); c.lineTo(76, 36); c.stroke(); mouth(c, 66, w); },
+    // Bolt the wind-up robot
+    (c, w) => { c.lineWidth = 4; c.strokeStyle = INK; c.beginPath(); c.moveTo(50, 22); c.lineTo(50, 10); c.stroke(); circle(c, 50, 9, 5); fillStroke(c, '#E2463C', 3);
+      rr(c, 26, 22, 48, 54, 10); fillStroke(c, '#C9D2D8', 4); rr(c, 76, 40, 14, 6, 2); fillStroke(c, '#FFD23F', 3); circle(c, 90, 36, 6); fillStroke(c, '#FFD23F', 3); circle(c, 90, 50, 6); fillStroke(c, '#FFD23F', 3);
+      [[31, 27], [69, 27], [31, 71], [69, 71]].forEach(([x, y]) => { c.fillStyle = INK; circle(c, x, y, 2); c.fill(); });
+      goggles(c, 44, w); rr(c, 38, 58, 24, 10, 3); fillStroke(c, w ? '#FFD23F' : '#2E2A3B', 3); },
+    // Fizz the goldfish in a bowl
+    (c, w) => { c.beginPath(); c.moveTo(26, 62); c.lineTo(10, 48); c.lineTo(12, 78); c.closePath(); fillStroke(c, '#FF9F1C', 3.5);
+      c.beginPath(); c.ellipse(52, 60, 28, 22, 0, 0, Math.PI * 2); fillStroke(c, '#FF9F1C', 4);
+      circle(c, 52, 48, 34); c.fillStyle = 'rgba(160,220,245,.35)'; c.fill(); c.lineWidth = 4; c.strokeStyle = INK; c.stroke();
+      c.fillStyle = 'rgba(255,255,255,.7)'; rr(c, 30, 24, 14, 6, 3); c.fill(); goggles(c, 52, w); mouth(c, 72, w); },
+    // Spindle the friendly spider
+    (c, w) => { c.lineWidth = 5; c.strokeStyle = INK;
+      for (let i = 0; i < 4; i++){ [-1, 1].forEach(s => { c.beginPath(); c.moveTo(50 + s * 18, 50 + i * 8); c.quadraticCurveTo(50 + s * 38, 34 + i * 10, 50 + s * 44, 60 + i * 10); c.stroke(); }); }
+      circle(c, 50, 58, 26); fillStroke(c, '#3B3548', 4); goggles(c, 52, w); c.strokeStyle = '#FFFFFF'; c.lineWidth = 4; c.beginPath();
+      if (w){ c.arc(50, 66, 8, 0.1, Math.PI - 0.1); } else { c.arc(50, 64, 6, 0.4, Math.PI - 0.4); } c.stroke(); },
+    // Pip the snail
+    (c, w) => { c.beginPath(); c.ellipse(46, 78, 34, 12, 0, 0, Math.PI * 2); fillStroke(c, '#B9C98F', 4);
+      circle(c, 62, 54, 24); fillStroke(c, '#C8643C', 4); c.lineWidth = 4; c.strokeStyle = INK; c.beginPath();
+      for (let t = 0; t < 12; t += 0.2){ const r = 20 - t * 1.6; c.lineTo(62 + Math.cos(t) * r, 54 + Math.sin(t) * r); } c.stroke();
+      c.lineWidth = 3; c.beginPath(); c.moveTo(28, 64); c.lineTo(24, 40); c.moveTo(36, 64); c.lineTo(38, 40); c.stroke();
+      circle(c, 24, 38, 4); fillStroke(c, '#B9C98F', 2); circle(c, 38, 38, 4); fillStroke(c, '#B9C98F', 2);
+      c.save(); c.translate(-18, 12); c.scale(0.9, 0.9); goggles(c, 52, w); c.restore(); mouth(c, 78, w); }
+  ];
+
+  /* Draws driver `idx` into a square of `size` at x, y. win = celebrating version. */
+  function drawDriver(c, idx, win, x, y, size){
+    const d = DRIVERS[idx] || DRIVERS[0], img = art[d.ids[win ? 1 : 0]];
+    c.save(); c.translate(x, y);
+    c.beginPath(); c.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2); c.clip();
+    c.fillStyle = d.bg; c.fillRect(0, 0, size, size);
+    if (img) c.drawImage(img, 0, 0, size, size);
+    else {
+      c.scale(size / 100, size / 100);
+      if (win){
+        c.fillStyle = '#FFD23F';
+        [[14, 18], [86, 22], [84, 70], [14, 66]].forEach(([sx, sy]) => { star(c, sx, sy, 7); c.fill(); });
+      }
+      DRIVER_DRAW[idx](c, win);
+      scarf(c, d.scarf);
+    }
+    c.restore();
+    c.save(); c.translate(x, y);
+    c.beginPath(); c.arc(size / 2, size / 2, size / 2 - size * 0.02, 0, Math.PI * 2);
+    c.lineWidth = Math.max(2, size * 0.04); c.strokeStyle = INK; c.stroke();
+    c.restore();
+  }
+  function star(c, x, y, r){
+    c.beginPath();
+    for (let i = 0; i < 10; i++){ const a = -Math.PI / 2 + i * Math.PI / 5, rad = i % 2 ? r * 0.45 : r; c.lineTo(x + Math.cos(a) * rad, y + Math.sin(a) * rad); }
+    c.closePath();
+  }
+
+  /* Small ready-made pictures, cached */
+  const cache = {};
+  function driverURL(idx, win, px){
+    const key = 'd' + idx + (win ? 'w' : '') + ':' + px + ':' + Object.keys(art).length;
+    if (!cache[key]){
+      const cv = document.createElement('canvas'); cv.width = px; cv.height = px;
+      drawDriver(cv.getContext('2d'), idx, win, 0, 0, px);
+      cache[key] = cv.toDataURL();
+    }
+    return cache[key];
+  }
+  /* Car facing up, as players see it in the picker */
+  function carURL(type, colour, px){
+    const key = 'c' + type + colour + ':' + px + ':' + Object.keys(art).length;
+    if (!cache[key]){
+      const cv = document.createElement('canvas'); cv.width = px; cv.height = px;
+      const c = cv.getContext('2d');
+      c.translate(px / 2, px / 2); c.scale(px / 90, px / 90); c.rotate(-Math.PI / 2);
+      drawCar(c, type, colour);
+      cache[key] = cv.toDataURL();
+    }
+    return cache[key];
+  }
+
+  return { CARS, DRIVERS, loadArt, ready: () => artReady, drawCar, drawDriver, driverURL, carURL };
+})();
+
 const $ = s => document.querySelector(s);
 const ordinal = p => ['1st','2nd','3rd','4th','5th','6th'][p - 1] || p + 'th';
 const store = {
@@ -142,6 +429,7 @@ const store = {
 
 const S = {
   ws: null, joined: false, stop: false, code: '', name: '', id: null,
+  pick: null, colour: '#FFD23F', lastState: 'lobby', place: 0, startIn: 0, view: '',
   mode: null, gen: 0, attemptOk: false, openTimer: 0, joinTimer: 0, pendingIn: null, inBusy: false,
   inp: { s: 0, g: 0, b: 0 }, auto: false, lastSent: '', wake: null
 };
@@ -301,9 +589,13 @@ function onMsg(m){
     S.joined = true; S.id = m.id; store.set('rid', m.id);
     $('#joinScreen').hidden = true; $('#padScreen').hidden = false;
     $('#me').textContent = S.name;
-    setStatus('You’re in! Waiting for the race');
     keepAwake();
     sendInput(true);
+    if (!S.pick){
+      try { const saved = JSON.parse(store.get('pick') || 'null'); if (saved) S.pick = { car: saved.car | 0, driver: saved.driver | 0, ready: false }; } catch {}
+      if (S.pick) sendPick();
+    }
+    setView('pick'); renderPick(); lobbyStatus();
   } else if (m.t === 'rejected'){
     store.del('rid');
     const why = {
@@ -313,12 +605,18 @@ function onMsg(m){
     }[m.reason] || 'Could not join that room.';
     backToJoin(why);
   } else if (m.t === 'lobby'){
-    if (m.colour) document.documentElement.style.setProperty('--me', m.colour);
+    if (m.colour){ S.colour = m.colour; document.documentElement.style.setProperty('--me', m.colour); }
     if (m.name){ S.name = m.name; $('#me').textContent = m.name; }
-    if (m.state === 'lobby') setStatus('You’re in! Waiting for the race');
-    if (m.state === 'countdown') setStatus('Get ready!');
+    if (typeof m.car === 'number') S.pick = { car: m.car, driver: m.driver, ready: !!m.ready };
+    S.lastState = m.state; S.startIn = m.startIn || 0; if (m.place) S.place = m.place;
+    if (m.state === 'countdown'){ setView('pad'); setStatus('Get ready!'); }
+    else { setView('pick'); renderPick(); lobbyStatus(); }
   } else if (m.t === 'status'){
-    if (m.colour) document.documentElement.style.setProperty('--me', m.colour);
+    if (m.colour){ S.colour = m.colour; document.documentElement.style.setProperty('--me', m.colour); }
+    if (typeof m.driver === 'number') setAvatar(m.driver);
+    S.lastState = m.state; if (m.place) S.place = m.place;
+    setView(m.state === 'countdown' || m.state === 'race' || m.state === 'paused' ? 'pad' : 'pick');
+    if (m.state === 'results'){ renderPick(); }
     if (m.state === 'countdown') setStatus(m.track ? 'Get ready! ' + m.track : 'Get ready!');
     else if (m.state === 'paused') setStatus('Paused');
     else if (m.state === 'results') setStatus('You came ' + ordinal(m.place) + '!');
@@ -338,6 +636,54 @@ function onMsg(m){
   }
 }
 function setStatus(t){ $('#status').textContent = t; }
+
+/* ---------- Car and driver picker ---------- */
+function setView(v){
+  if (S.view === v) return;
+  S.view = v;
+  $('#pad').hidden = v !== 'pad';
+  $('#pick').hidden = v !== 'pick';
+  document.querySelector('.turn-hint').hidden = v !== 'pad';
+  if (v !== 'pad'){ active.clear(); update(); }
+}
+function setAvatar(d){ $('#meAv').src = SPRITES.driverURL(d, false, 80); }
+function renderPick(){
+  if (!S.pick) S.pick = { car: 0, driver: 0, ready: false };
+  const { car, driver, ready } = S.pick;
+  $('#carImg').src = SPRITES.carURL(car, S.colour, 240);
+  $('#carName').textContent = SPRITES.CARS[car].name;
+  $('#driverImg').src = SPRITES.driverURL(driver, false, 240);
+  $('#driverName').textContent = SPRITES.DRIVERS[driver].name;
+  setAvatar(driver);
+  const btn = $('#readyBtn');
+  btn.setAttribute('aria-pressed', String(ready));
+  btn.textContent = ready ? 'Ready! Tap to change' : 'I’m ready';
+  document.querySelectorAll('.arrow').forEach(a => { a.disabled = ready; });
+}
+function lobbyStatus(){
+  if (!S.pick) return;
+  if (S.startIn) setStatus('Race starts in ' + S.startIn + '…');
+  else if (S.pick.ready) setStatus('Waiting for the others');
+  else if (S.lastState === 'results' && S.place) setStatus('You came ' + ordinal(S.place) + '! Ready again?');
+  else setStatus('Pick your car and driver');
+}
+function sendPick(){
+  store.set('pick', JSON.stringify({ car: S.pick.car, driver: S.pick.driver }));
+  send({ t: 'pick', car: S.pick.car, driver: S.pick.driver, ready: S.pick.ready });
+}
+document.querySelectorAll('.arrow').forEach(a => a.addEventListener('click', () => {
+  if (!S.pick || S.pick.ready) return;
+  const key = a.dataset.pick, n = key === 'car' ? SPRITES.CARS.length : SPRITES.DRIVERS.length;
+  S.pick[key] = (S.pick[key] + Number(a.dataset.d) + n) % n;
+  if (navigator.vibrate) navigator.vibrate(8);
+  renderPick(); lobbyStatus(); sendPick();
+}));
+$('#readyBtn').addEventListener('click', () => {
+  if (!S.pick) return;
+  S.pick.ready = !S.pick.ready;
+  if (navigator.vibrate) navigator.vibrate(S.pick.ready ? [20, 40, 20] : 10);
+  renderPick(); lobbyStatus(); sendPick();
+});
 
 setInterval(() => send({ t: 'ping', ts: performance.now() }), 2000);
 document.addEventListener('visibilitychange', () => {
@@ -419,6 +765,7 @@ async function keepAwake(){
 }
 
 // Scanned the QR code and already used this phone before? Join straight away.
+SPRITES.loadArt().then(() => { if (S.joined) renderPick(); });
 if ($('#name').value && $('#code').value.length === 4 && params.get('code')) tryJoin();
 else if (!$('#name').value) $('#name').focus();
 })();

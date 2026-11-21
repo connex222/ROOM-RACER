@@ -13,9 +13,11 @@ const path = require('path');
 const os = require('os');
 const { WebSocketServer, WebSocket } = require('ws');
 
-const VERSION = '0.3.4';
+const VERSION = '0.4.0';
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC = path.join(__dirname, 'public');
+const ART = path.join(PUBLIC, 'art');
+const ART_TYPES = { '.png': 'image/png', '.webp': 'image/webp', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg' };
 const ROUTES = { '/': 'tv.html', '/tv': 'tv.html', '/play': 'phone.html', '/phone': 'phone.html', '/test': 'diag.html' };
 const MAX_PLAYERS = 6;
 const LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // no I or O, they look like 1 and 0
@@ -98,7 +100,24 @@ function fromPhone(room, id, m) {
   if (m.t === 'in') {
     const s = Math.max(-1, Math.min(1, Number(m.s) || 0));
     send(room.tv, { t: 'in', id, s, g: m.g ? 1 : 0, b: m.b ? 1 : 0 });
+  } else if (m.t === 'pick') {
+    const car = Math.max(0, Math.min(11, Math.floor(Number(m.car) || 0)));
+    const driver = Math.max(0, Math.min(7, Math.floor(Number(m.driver) || 0)));
+    send(room.tv, { t: 'pick', id, car, driver, ready: !!m.ready });
   }
+}
+
+/* ChatGPT art lives in public/art. A file is found by the ID it starts with, e.g. C01_toaster.png -> C01 */
+function artFiles() {
+  const found = {};
+  let names = [];
+  try { names = fs.readdirSync(ART); } catch { return found; }
+  for (const n of names) {
+    const ext = path.extname(n).toLowerCase();
+    const m = /^([CDTPU]\d{2})/i.exec(n);
+    if (m && ART_TYPES[ext] && !found[m[1].toUpperCase()]) found[m[1].toUpperCase()] = n;
+  }
+  return found;
 }
 function phoneLeft(room, id) {
   if (isOpen(room.tv)) send(room.tv, { t: 'leave', id });
@@ -162,6 +181,18 @@ const server = http.createServer((req, res) => {
     h.timer = setTimeout(() => { if (h.res === res) { h.res = null; h.seen = Date.now(); json(res, 200, []); } }, POLL_HOLD_MS);
     req.on('close', () => { if (h.res === res) { h.res = null; clearTimeout(h.timer); } });
     return;
+  }
+
+  if (url.pathname === '/art/list') return json(res, 200, Object.keys(artFiles()));
+  const artMatch = /^\/art\/([CDTPU]\d{2})$/i.exec(url.pathname);
+  if (artMatch) {
+    const name = artFiles()[artMatch[1].toUpperCase()];
+    if (!name) { res.writeHead(404, { 'Content-Type': 'text/plain' }); return res.end('No art yet'); }
+    return fs.readFile(path.join(ART, name), (err, data) => {
+      if (err) { res.writeHead(404, { 'Content-Type': 'text/plain' }); return res.end('No art yet'); }
+      res.writeHead(200, { 'Content-Type': ART_TYPES[path.extname(name).toLowerCase()], 'Cache-Control': 'no-cache' });
+      res.end(data);
+    });
   }
 
   const file = ROUTES[url.pathname];
