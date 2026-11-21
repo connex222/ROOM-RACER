@@ -94,7 +94,7 @@ input:focus{outline:4px solid var(--tape);outline-offset:2px;border-color:#1E1A2
   <div class="card">
     <div class="tape" aria-hidden="true"></div>
     <h1>Room Racers</h1>
-    <p class="sub">Type your name and the room code shown on the TV.</p>
+    <p class="sub">Type your name. If you scanned the QR code, the room code is already filled in.</p>
     <label for="name">Your name</label>
     <input id="name" maxlength="12" autocomplete="nickname" enterkeyhint="next">
     <label for="code">Room code</label>
@@ -310,7 +310,8 @@ async function keepAwake(){
   } catch {}
 }
 
-if ($('#name').value && $('#code').value.length === 4 && params.get('code')) $('#joinBtn').focus();
+// Scanned the QR code and already used this phone before? Join straight away.
+if ($('#name').value && $('#code').value.length === 4 && params.get('code')) tryJoin();
 else if (!$('#name').value) $('#name').focus();
 })();
 </script>
