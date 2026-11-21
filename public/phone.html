@@ -47,6 +47,7 @@ input:focus{outline:4px solid var(--tape);outline-offset:2px;border-color:#1E1A2
 .big{font:inherit;font-size:26px;font-weight:900;width:100%;min-height:62px;margin-top:20px;border:3px solid #1E1A2B;border-radius:14px;
   background:var(--tape);color:#1E1A2B;cursor:pointer}
 .big:disabled{opacity:.5}
+.stage{color:var(--muted);font-weight:700;font-size:17px;min-height:1.4em;margin:12px 0 0}
 .error{color:#E2463C;font-weight:800;font-size:18px;min-height:1.4em;margin:12px 0 0}
 
 /* Controller */
@@ -100,6 +101,7 @@ input:focus{outline:4px solid var(--tape);outline-offset:2px;border-color:#1E1A2
     <label for="code">Room code</label>
     <input id="code" maxlength="4" autocapitalize="characters" autocomplete="off" spellcheck="false" enterkeyhint="go">
     <button class="big" id="joinBtn">Join race</button>
+    <p class="stage" id="joinStage" aria-live="polite"></p>
     <p class="error" id="joinError" role="alert"></p>
   </div>
 </main>
@@ -138,6 +140,7 @@ const store = {
 
 const S = {
   ws: null, joined: false, stop: false, code: '', name: '', id: null,
+  mode: null, gen: 0, attemptOk: false, openTimer: 0, joinTimer: 0, pendingIn: null, inBusy: false,
   inp: { s: 0, g: 0, b: 0 }, auto: false, lastSent: '', wake: null
 };
 
@@ -165,31 +168,125 @@ function tryJoin(){
 }
 
 function backToJoin(msg){
-  S.stop = true; S.joined = false;
-  if (S.ws) try { S.ws.close(); } catch {}
+  S.stop = true; S.joined = false; S.gen++; S.mode = null;
+  clearTimeout(S.openTimer); clearTimeout(S.joinTimer);
+  if (S.ws){ const w = S.ws; S.ws = null; try { w.close(); } catch {} }
+  setStage('');
   $('#padScreen').hidden = true; $('#joinScreen').hidden = false;
   $('#joinBtn').disabled = false; $('#joinBtn').textContent = 'Join race';
   $('#joinError').textContent = msg || '';
 }
 
-/* ---------- Connection ---------- */
+/* ---------- Connection: live link first, plain web requests as a backup ---------- */
+const WS_OPEN_MS = 4000, WS_JOIN_MS = 5000, HTTP_JOIN_MS = 9000;
+function setStage(t){ $('#joinStage').textContent = t; }
+function clearTimers(){ clearTimeout(S.openTimer); clearTimeout(S.joinTimer); }
+
 function connect(){
-  const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
-  S.ws = ws;
-  ws.onopen = () => ws.send(JSON.stringify({ t: 'join', code: S.code, name: S.name, rid: S.id }));
-  ws.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch { return; } onMsg(m); };
+  if (S.stop) return;
+  clearTimers();
+  S.attemptOk = false;
+  if (!S.joined) setStage('Connecting to the game');
+  let ws;
+  try { ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws'); }
+  catch { useHttp(); return; }
+  S.ws = ws; S.mode = 'ws';
+  const giveUp = () => {
+    if (S.ws !== ws) return;
+    S.ws = null; ws.onclose = null;
+    try { ws.close(); } catch {}
+    useHttp();
+  };
+  S.openTimer = setTimeout(() => { if (ws.readyState !== 1) giveUp(); }, WS_OPEN_MS);
+  ws.onopen = () => {
+    clearTimeout(S.openTimer);
+    if (!S.joined) setStage('Joining room ' + S.code);
+    ws.send(JSON.stringify({ t: 'join', code: S.code, name: S.name, rid: S.id }));
+    S.joinTimer = setTimeout(() => { if (!S.attemptOk) giveUp(); }, WS_JOIN_MS);
+  };
+  ws.onmessage = e => { if (S.ws !== ws) return; let m; try { m = JSON.parse(e.data); } catch { return; } onMsg(m); };
   ws.onclose = () => {
     if (S.ws !== ws) return;
+    clearTimers(); S.ws = null;
     if (S.stop) return;
-    if (!S.joined){ backToJoin('Could not reach the game. Check the link and try again.'); return; }
+    if (!S.attemptOk){ useHttp(); return; }
     setStatus('Reconnecting');
-    setTimeout(() => { if (!S.stop && (!S.ws || S.ws.readyState > 1)) connect(); }, 1000);
+    setTimeout(() => { if (!S.stop && !S.ws && S.mode === 'ws') connect(); }, 1000);
   };
 }
-function send(o){ if (S.ws && S.ws.readyState === 1) S.ws.send(JSON.stringify(o)); }
+
+async function post(url, body, ms){
+  const ac = new AbortController(), t = setTimeout(() => ac.abort(), ms || 6000);
+  try {
+    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body), signal: ac.signal, cache: 'no-store' });
+    if (r.status === 410) return { t: 'gone' };
+    return await r.json();
+  } finally { clearTimeout(t); }
+}
+
+async function useHttp(){
+  if (S.stop) return;
+  clearTimers();
+  S.mode = 'http'; S.attemptOk = false;
+  const gen = ++S.gen;
+  if (!S.joined) setStage('Joining room ' + S.code + ' using the backup connection');
+  try {
+    const r = await post('/api/join', { code: S.code, name: S.name, rid: S.id }, HTTP_JOIN_MS);
+    if (S.stop || S.gen !== gen) return;
+    onMsg(r);
+    if (r.t === 'joined') pollLoop(gen);
+  } catch {
+    if (S.stop || S.gen !== gen) return;
+    if (!S.joined) backToJoin('Could not reach the game. Check the phone is online, then tap Join race again.');
+    else { setStatus('Reconnecting'); setTimeout(() => { if (S.gen === gen) connect(); }, 2000); }
+  }
+}
+
+async function pollLoop(gen){
+  let fails = 0;
+  while (!S.stop && S.mode === 'http' && S.gen === gen){
+    try {
+      const ac = new AbortController(), t = setTimeout(() => ac.abort(), 30000);
+      const r = await fetch('/api/poll?id=' + encodeURIComponent(S.id), { cache: 'no-store', signal: ac.signal });
+      clearTimeout(t);
+      if (S.gen !== gen) return;
+      if (r.status === 410){ setStatus('Reconnecting'); setTimeout(() => { if (S.gen === gen) connect(); }, 500); return; }
+      const list = await r.json();
+      fails = 0;
+      if (S.gen === gen && Array.isArray(list)) list.forEach(onMsg);
+    } catch {
+      if (S.gen !== gen) return;
+      if (++fails >= 4){ setStatus('Reconnecting'); setTimeout(() => { if (S.gen === gen) connect(); }, 1000); return; }
+      await new Promise(res => setTimeout(res, 800));
+    }
+  }
+}
+
+function send(o){
+  if (S.mode === 'ws'){ if (S.ws && S.ws.readyState === 1) S.ws.send(JSON.stringify(o)); return; }
+  if (S.mode !== 'http' || !S.id || !S.joined) return;
+  if (o.t === 'in'){ S.pendingIn = o; if (!S.inBusy) flushIn(); return; }
+  httpSend(o);
+}
+function flushIn(){
+  const o = S.pendingIn; if (!o) return;
+  S.pendingIn = null; S.inBusy = true;
+  httpSend(o).finally(() => { S.inBusy = false; if (S.pendingIn) flushIn(); });
+}
+function httpSend(o){
+  const gen = S.gen;
+  return post('/api/send', { id: S.id, m: o }, 4000).then(x => {
+    if (x && x.t === 'pong') onMsg(x);
+    if (x && x.t === 'gone' && S.mode === 'http' && S.gen === gen){
+      S.gen++; setStatus('Reconnecting'); setTimeout(connect, 500);
+    }
+  }).catch(() => {});
+}
 
 function onMsg(m){
   if (m.t === 'joined'){
+    S.attemptOk = true; clearTimeout(S.joinTimer);
     S.joined = true; S.id = m.id; store.set('rid', m.id);
     $('#joinScreen').hidden = true; $('#padScreen').hidden = false;
     $('#me').textContent = S.name;
@@ -225,7 +322,7 @@ function onMsg(m){
     backToJoin('The TV ended the game. Ask for the new room code.');
   } else if (m.t === 'pong'){
     const ms = Math.round(performance.now() - m.ts);
-    const el = $('#ping'); el.textContent = ms + ' ms';
+    const el = $('#ping'); el.textContent = ms + ' ms' + (S.mode === 'http' ? ' (backup)' : '');
     el.style.color = ms > 150 ? '#E2463C' : '';
   }
 }
@@ -235,7 +332,7 @@ setInterval(() => send({ t: 'ping', ts: performance.now() }), 2000);
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible' || !S.joined || S.stop) return;
   keepAwake();
-  if (!S.ws || S.ws.readyState > 1) connect();
+  if (S.mode === 'ws' && (!S.ws || S.ws.readyState > 1)) connect();
 });
 
 /* ---------- Controls ---------- */
@@ -275,7 +372,7 @@ function update(){
 }
 function sendInput(force){
   const msg = JSON.stringify({ t: 'in', s: S.inp.s, g: S.inp.g, b: S.inp.b });
-  if (force || msg !== S.lastSent){ S.lastSent = msg; if (S.ws && S.ws.readyState === 1) S.ws.send(msg); }
+  if (force || msg !== S.lastSent){ S.lastSent = msg; send({ t: 'in', s: S.inp.s, g: S.inp.g, b: S.inp.b }); }
 }
 setInterval(() => sendInput(true), 150);   // heartbeat so the TV knows the phone is still here
 
