@@ -13,6 +13,7 @@ const path = require('path');
 const os = require('os');
 const { WebSocketServer, WebSocket } = require('ws');
 
+const VERSION = '0.3.2';
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC = path.join(__dirname, 'public');
 const ROUTES = { '/': 'tv.html', '/tv': 'tv.html', '/play': 'phone.html', '/phone': 'phone.html' };
@@ -118,7 +119,7 @@ const server = http.createServer((req, res) => {
 
   if (url.pathname === '/healthz') {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    return res.end('ok');
+    return res.end('ok ' + VERSION);
   }
 
   // Fallback: join
@@ -281,7 +282,7 @@ setInterval(() => {
 
 server.listen(PORT, () => {
   const ip = lanAddress();
-  console.log('Room Racers running');
+  console.log('Room Racers ' + VERSION + ' running');
   console.log(`  TV (this laptop):  http://localhost:${PORT}`);
   if (ip) console.log(`  Phones (same Wi-Fi): http://${ip}:${PORT}/play`);
 });
