@@ -72,6 +72,10 @@ input:focus{outline:4px solid var(--tape);outline-offset:2px;border-color:#1E1A2
 .key.left,.key.right{background:var(--steer);color:var(--steer-ink);font-size:min(16vw,16vh,96px)}
 .key.go{background:var(--go);color:#1E1A2B;font-size:min(9vw,10vh,56px)}
 .key.brake{background:var(--brake);color:#1E1A2B;font-size:min(6vw,7vh,36px)}
+.key.item{background:var(--panel);color:var(--muted);font-size:min(5vw,6vh,26px);gap:8px;flex-direction:row}
+.key.item.has{background:var(--tape);color:#1E1A2B;animation:pulse 1s ease-in-out infinite}
+.key.item img{height:78%;max-height:90px;width:auto}
+@keyframes pulse{50%{filter:brightness(1.18)}}
 .turn-hint{display:none;margin:0;text-align:center;color:var(--muted);font-weight:800;font-size:15px}
 
 /* Landscape: steering on the left thumb, pedals on the right */
@@ -103,13 +107,13 @@ input:focus{outline:4px solid var(--tape);outline-offset:2px;border-color:#1E1A2
 }
 @media (orientation: landscape){
   .pad{grid-template-columns:1.15fr 1fr}
-  .pedals{grid-template-rows:1fr 1.9fr}
+  .pedals{grid-template-rows:1fr 1.2fr 1.6fr}
 }
 /* Portrait: steering on top, pedals below */
 @media (orientation: portrait){
   #padScreen{grid-template-rows:auto 1fr auto}
   .pad{grid-template-rows:1fr 1fr}
-  .pedals{grid-template-columns:1fr 1.6fr}
+  .pedals{grid-template-columns:1fr 1.1fr 1.4fr}
   .turn-hint{display:block}
   .me{display:none}
 }
@@ -130,7 +134,7 @@ input:focus{outline:4px solid var(--tape);outline-offset:2px;border-color:#1E1A2
     <button class="big" id="joinBtn">Join race</button>
     <p class="stage" id="joinStage" aria-live="polite"></p>
     <p class="error" id="joinError" role="alert"></p>
-    <p class="ver">Version 0.6.0 · <a href="/test" style="color:inherit">connection test</a></p>
+    <p class="ver">Version 0.7.0 · <a href="/test" style="color:inherit">connection test</a></p>
   </div>
 </main>
 
@@ -150,6 +154,7 @@ input:focus{outline:4px solid var(--tape);outline-offset:2px;border-color:#1E1A2
     </div>
     <div class="pedals">
       <button class="key brake" data-k="brake">Brake</button>
+      <button class="key item" data-k="item" id="itemBtn" aria-label="Use item"><span id="itemLabel">No item</span></button>
       <button class="key go" data-k="go">Go</button>
     </div>
   </div>
@@ -431,6 +436,7 @@ const store = {
 
 const S = {
   ws: null, joined: false, stop: false, code: '', name: '', id: null,
+  uses: 0, item: null,
   pick: null, colour: '#FFD23F', lastState: 'lobby', place: 0, startIn: 0, view: '',
   mode: null, gen: 0, attemptOk: false, openTimer: 0, joinTimer: 0, pendingIn: null, inBusy: false,
   inp: { s: 0, g: 0, b: 0 }, auto: false, lastSent: '', wake: null
@@ -616,6 +622,7 @@ function onMsg(m){
   } else if (m.t === 'status'){
     if (m.colour){ S.colour = m.colour; document.documentElement.style.setProperty('--me', m.colour); }
     if (typeof m.driver === 'number') setAvatar(m.driver);
+    if ('item' in m && m.item !== S.item){ S.item = m.item; renderItem(); }
     S.lastState = m.state; if (m.place) S.place = m.place;
     setView(m.state === 'countdown' || m.state === 'race' || m.state === 'paused' ? 'pad' : 'pick');
     if (m.state === 'results'){ renderPick(); }
@@ -624,6 +631,9 @@ function onMsg(m){
     else if (m.state === 'results') setStatus('You came ' + ordinal(m.place) + '!');
     else if (m.finished) setStatus('Finished ' + ordinal(m.finishPlace) + '!');
     else if (m.state === 'race') setStatus(ordinal(m.place) + ' of ' + m.total + ', lap ' + m.lap + '/' + m.laps);
+  } else if (m.t === 'item'){
+    S.item = m.item || null; renderItem();
+    if (S.item && navigator.vibrate) navigator.vibrate([15, 30, 15]);
   } else if (m.t === 'buzz'){
     if (navigator.vibrate) navigator.vibrate(m.ms);
   } else if (m.t === 'notice'){
@@ -694,6 +704,23 @@ document.addEventListener('visibilitychange', () => {
   if (S.mode === 'ws' && (!S.ws || S.ws.readyState > 1)) connect();
 });
 
+/* ---------- Power-up button ---------- */
+const ITEM_INFO = { banana: ['Banana', 'P05'], marbles: ['Marbles', 'P08'], jump: ['Ramp jump', 'P04'], turbo: ['Turbo', 'P01'], paw: ['Cat paw', 'P07'] };
+function renderItem(){
+  const btn = $('#itemBtn'); if (!btn) return;
+  const info = S.item && ITEM_INFO[S.item];
+  btn.classList.toggle('has', !!info);
+  if (!info){ btn.innerHTML = '<span>No item</span>'; return; }
+  const img = SPRITES.img(info[1]);
+  btn.innerHTML = (img ? '<img alt="" src="' + img.src + '">' : '') + '<span>' + info[0] + '</span>';
+}
+function useItem(){
+  if (!S.item) return;
+  S.uses++; S.item = null; renderItem();
+  if (navigator.vibrate) navigator.vibrate(25);
+  sendInput(true);
+}
+
 /* ---------- Controls ---------- */
 const pad = $('#pad');
 const active = new Map();   // finger -> button
@@ -707,7 +734,8 @@ pad.addEventListener('pointerdown', e => {
   try { pad.setPointerCapture(e.pointerId); } catch {}
   const k = keyAt(e.clientX, e.clientY);
   active.set(e.pointerId, k);
-  if (k && navigator.vibrate) navigator.vibrate(8);
+  if (k === 'item'){ useItem(); }
+  else if (k && navigator.vibrate) navigator.vibrate(8);
   update();
 }, { passive: false });
 pad.addEventListener('pointermove', e => {
@@ -730,8 +758,8 @@ function update(){
   sendInput(false);
 }
 function sendInput(force){
-  const msg = JSON.stringify({ t: 'in', s: S.inp.s, g: S.inp.g, b: S.inp.b });
-  if (force || msg !== S.lastSent){ S.lastSent = msg; send({ t: 'in', s: S.inp.s, g: S.inp.g, b: S.inp.b }); }
+  const msg = JSON.stringify({ t: 'in', s: S.inp.s, g: S.inp.g, b: S.inp.b, u: S.uses });
+  if (force || msg !== S.lastSent){ S.lastSent = msg; send({ t: 'in', s: S.inp.s, g: S.inp.g, b: S.inp.b, u: S.uses }); }
 }
 setInterval(() => sendInput(true), 150);   // heartbeat so the TV knows the phone is still here
 
@@ -767,7 +795,8 @@ async function keepAwake(){
 }
 
 // Scanned the QR code and already used this phone before? Join straight away.
-SPRITES.loadArt(/^(C|D|U01|U05)/).then(() => {
+SPRITES.loadArt(/^(C|D|U01|U05|P0[1-8]|P10)/).then(() => {
+  renderItem();
   const logo = SPRITES.img('U01');
   if (logo) document.querySelector('#joinScreen h1').innerHTML = '<img class="logo" alt="Room Racers" src="' + logo.src + '">';
   const bg = SPRITES.img('U05');

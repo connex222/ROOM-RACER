@@ -13,7 +13,7 @@ const path = require('path');
 const os = require('os');
 const { WebSocketServer, WebSocket } = require('ws');
 
-const VERSION = '0.6.0';
+const VERSION = '0.7.0';
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC = path.join(__dirname, 'public');
 const ART = path.join(PUBLIC, 'art');
@@ -101,7 +101,8 @@ function announce(room, id, p) {
 function fromPhone(room, id, m) {
   if (m.t === 'in') {
     const s = Math.max(-1, Math.min(1, Number(m.s) || 0));
-    send(room.tv, { t: 'in', id, s, g: m.g ? 1 : 0, b: m.b ? 1 : 0 });
+    const u = Math.max(0, Math.floor(Number(m.u) || 0));
+    send(room.tv, { t: 'in', id, s, g: m.g ? 1 : 0, b: m.b ? 1 : 0, u });
   } else if (m.t === 'pick') {
     const car = Math.max(0, Math.min(11, Math.floor(Number(m.car) || 0)));
     const driver = Math.max(0, Math.min(7, Math.floor(Number(m.driver) || 0)));
