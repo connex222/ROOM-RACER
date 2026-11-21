@@ -1,6 +1,6 @@
 {
   "name": "room-racers",
-  "version": "0.4.0",
+  "version": "0.5.2",
   "description": "Room Racers: TV split-screen racing with phone controllers",
   "main": "server.js",
   "scripts": {
