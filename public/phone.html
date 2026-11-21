@@ -211,7 +211,7 @@ function onMsg(m){
     if (m.state === 'countdown') setStatus('Get ready!');
   } else if (m.t === 'status'){
     if (m.colour) document.documentElement.style.setProperty('--me', m.colour);
-    if (m.state === 'countdown') setStatus('Get ready!');
+    if (m.state === 'countdown') setStatus(m.track ? 'Get ready! ' + m.track : 'Get ready!');
     else if (m.state === 'paused') setStatus('Paused');
     else if (m.state === 'results') setStatus('You came ' + ordinal(m.place) + '!');
     else if (m.finished) setStatus('Finished ' + ordinal(m.finishPlace) + '!');
