@@ -13,10 +13,10 @@ const path = require('path');
 const os = require('os');
 const { WebSocketServer, WebSocket } = require('ws');
 
-const VERSION = '0.3.2';
+const VERSION = '0.3.3';
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC = path.join(__dirname, 'public');
-const ROUTES = { '/': 'tv.html', '/tv': 'tv.html', '/play': 'phone.html', '/phone': 'phone.html' };
+const ROUTES = { '/': 'tv.html', '/tv': 'tv.html', '/play': 'phone.html', '/phone': 'phone.html', '/test': 'diag.html' };
 const MAX_PLAYERS = 6;
 const LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // no I or O, they look like 1 and 0
 const TV_GRACE_MS = 60000;                  // how long a room waits for a lost TV

@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Room Racers connection test</title>
+<style>
+:root{
+  --bg:#E9F2EC; --panel:#FFFFFF; --ink:#1E1A2B; --muted:#55506A; --line:#CFD8D2;
+  color-scheme:light; box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){ --bg:#14111D; --panel:#221D31; --ink:#F3F0FA; --muted:#B6AFCB; --line:#3B3452; color-scheme:dark; }
+}
+:root[data-theme="dark"]{ --bg:#14111D; --panel:#221D31; --ink:#F3F0FA; --muted:#B6AFCB; --line:#3B3452; color-scheme:dark; }
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);padding:18px;
+  font-family:ui-rounded,"Arial Rounded MT Bold","Nunito","Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif}
+h1{font-size:30px;margin:0 0 6px;font-weight:900}
+p{color:var(--muted);font-size:17px;line-height:1.4;margin:0 0 14px}
+ol{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+li{background:var(--panel);border:3px solid var(--line);border-radius:14px;padding:12px 14px;display:flex;gap:12px;align-items:flex-start}
+.mark{font-size:26px;font-weight:900;line-height:1;width:30px;flex:none;text-align:center}
+.name{font-weight:900;font-size:18px}
+.detail{color:var(--muted);font-size:15px;margin-top:3px;word-break:break-word}
+.pass{border-color:#2ECC71}.pass .mark{color:#1F9E55}
+.fail{border-color:#FF4D4D}.fail .mark{color:#E2463C}
+button{font:inherit;font-size:20px;font-weight:900;width:100%;min-height:56px;margin-top:16px;border:3px solid #1E1A2B;border-radius:14px;background:#FFD23F;color:#1E1A2B}
+</style>
+</head>
+<body>
+<h1>Connection test</h1>
+<p>This checks each part of joining a race from this phone. Tell Claude which lines go red.</p>
+<ol id="list"></ol>
+<button id="again">Run the test again</button>
+<script>
+(() => {
+'use strict';
+const list = document.getElementById('list');
+const rows = {};
+function row(id, name){
+  const li = document.createElement('li');
+  li.innerHTML = '<span class="mark">…</span><div><div class="name"></div><div class="detail">Waiting</div></div>';
+  li.querySelector('.name').textContent = name;
+  list.appendChild(li); rows[id] = li;
+}
+function set(id, ok, detail){
+  const li = rows[id];
+  li.className = ok ? 'pass' : 'fail';
+  li.querySelector('.mark').textContent = ok ? '✓' : '✗';
+  li.querySelector('.detail').textContent = detail;
+}
+function withTimeout(promise, ms){
+  return Promise.race([promise, new Promise((_, rej) => setTimeout(() => rej(new Error('No answer after ' + ms / 1000 + ' seconds')), ms))]);
+}
+
+async function run(){
+  list.innerHTML = '';
+  row('js', 'Page script runs');
+  row('timer', 'Timers work');
+  row('get', 'Can reach the game server');
+  row('post', 'Backup connection works');
+  row('ws', 'Live connection works');
+  row('ua', 'Browser');
+
+  set('js', true, 'Yes');
+  set('ua', true, navigator.userAgent);
+
+  const t0 = Date.now();
+  setTimeout(() => set('timer', true, 'Fired after ' + (Date.now() - t0) + ' ms'), 300);
+
+  try {
+    const t = Date.now();
+    const r = await withTimeout(fetch('/healthz', { cache: 'no-store' }), 6000);
+    const text = await r.text();
+    set('get', r.ok, 'Answer "' + text + '" in ' + (Date.now() - t) + ' ms');
+  } catch (e){ set('get', false, String(e && e.message || e)); }
+
+  try {
+    const t = Date.now();
+    const r = await withTimeout(fetch('/api/join', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: 'TEST', name: 'test' }), cache: 'no-store' }), 6000);
+    const j = await r.json();
+    set('post', j && j.t === 'rejected', 'Server replied in ' + (Date.now() - t) + ' ms');
+  } catch (e){ set('post', false, String(e && e.message || e)); }
+
+  try {
+    const t = Date.now();
+    const ms = await withTimeout(new Promise((res, rej) => {
+      let ws;
+      try { ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws'); }
+      catch (e){ rej(e); return; }
+      ws.onopen = () => ws.send(JSON.stringify({ t: 'ping', ts: 0 }));
+      ws.onmessage = () => { res(Date.now() - t); try { ws.close(); } catch {} };
+      ws.onerror = () => rej(new Error('Blocked or refused'));
+    }), 6000);
+    set('ws', true, 'Connected and answered in ' + ms + ' ms');
+  } catch (e){ set('ws', false, String(e && e.message || e)); }
+}
+document.getElementById('again').addEventListener('click', run);
+run();
+})();
+</script>
+</body>
+</html>

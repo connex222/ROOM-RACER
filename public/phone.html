@@ -104,7 +104,7 @@ input:focus{outline:4px solid var(--tape);outline-offset:2px;border-color:#1E1A2
     <button class="big" id="joinBtn">Join race</button>
     <p class="stage" id="joinStage" aria-live="polite"></p>
     <p class="error" id="joinError" role="alert"></p>
-    <p class="ver">Version 0.3.2</p>
+    <p class="ver">Version 0.3.3 · <a href="/test" style="color:inherit">connection test</a></p>
   </div>
 </main>
 
@@ -166,10 +166,19 @@ function tryJoin(){
   store.set('name', name); store.set('code', code);
   $('#joinError').textContent = '';
   $('#joinBtn').disabled = true; $('#joinBtn').textContent = 'Joining';
+  const started = Date.now();
+  clearInterval(S.joinClock);
+  S.joinClock = setInterval(() => {
+    if (S.joined || !$('#joinBtn').disabled){ clearInterval(S.joinClock); return; }
+    const secs = Math.round((Date.now() - started) / 1000);
+    $('#joinBtn').textContent = 'Joining ' + secs + 's';
+    if (secs >= 20){ clearInterval(S.joinClock); backToJoin('Joining took too long. Tap Join race to try again, or tap connection test below.'); }
+  }, 1000);
   connect();
 }
 
 function backToJoin(msg){
+  clearInterval(S.joinClock);
   S.stop = true; S.joined = false; S.gen++; S.mode = null;
   clearTimeout(S.openTimer); clearTimeout(S.joinTimer);
   if (S.ws){ const w = S.ws; S.ws = null; try { w.close(); } catch {} }
