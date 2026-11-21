@@ -76,7 +76,9 @@ input:focus{outline:4px solid var(--tape);outline-offset:2px;border-color:#1E1A2
 
 /* Landscape: steering on the left thumb, pedals on the right */
 /* Car and driver picker */
-.pick{display:grid;gap:10px;min-height:0}
+.pick{display:grid;gap:10px;min-height:0;background-size:cover;background-position:center;border-radius:18px;padding:6px}
+.pick .chooser{background:color-mix(in srgb, var(--panel) 88%, transparent)}
+.logo{display:block;width:100%;max-width:300px;height:auto;margin:-6px auto 2px}
 .chooser{background:var(--panel);border:3px solid var(--line);border-radius:18px;padding:8px 10px;display:grid;
   grid-template-rows:auto 1fr auto;min-height:0;text-align:center}
 .ch-label{font-weight:900;font-size:16px;color:var(--muted)}
@@ -128,7 +130,7 @@ input:focus{outline:4px solid var(--tape);outline-offset:2px;border-color:#1E1A2
     <button class="big" id="joinBtn">Join race</button>
     <p class="stage" id="joinStage" aria-live="polite"></p>
     <p class="error" id="joinError" role="alert"></p>
-    <p class="ver">Version 0.5.2 · <a href="/test" style="color:inherit">connection test</a></p>
+    <p class="ver">Version 0.6.0 · <a href="/test" style="color:inherit">connection test</a></p>
   </div>
 </main>
 
@@ -208,10 +210,10 @@ const SPRITES = (() => {
   /* ---------- ChatGPT art ---------- */
   const art = {};          // id -> loaded Image
   let artReady = Promise.resolve();
-  function loadArt(){
+  function loadArt(only){
     artReady = fetch('/art/list', { cache: 'no-store' })
       .then(r => r.ok ? r.json() : [])
-      .then(list => Promise.all((Array.isArray(list) ? list : []).map(id => new Promise(res => {
+      .then(list => Promise.all((Array.isArray(list) ? list : []).filter(id => !only || only.test(id)).map(id => new Promise(res => {
         const img = new Image();
         img.onload = () => { art[id] = img; res(); };
         img.onerror = () => res();
@@ -298,7 +300,7 @@ const SPRITES = (() => {
     const def = CARS[type] || CARS[0], img = art[def.id];
     if (img){
       c.save(); c.rotate(Math.PI / 2);
-      c.drawImage(img, -40, -40, 80, 80);
+      c.drawImage(img, -43, -43, 86, 86);
       c.restore();
       return;
     }
@@ -416,7 +418,7 @@ const SPRITES = (() => {
     return cache[key];
   }
 
-  return { CARS, DRIVERS, loadArt, ready: () => artReady, drawCar, drawDriver, driverURL, carURL };
+  return { CARS, DRIVERS, loadArt, ready: () => artReady, img: id => art[id] || null, drawCar, drawDriver, driverURL, carURL };
 })();
 
 const $ = s => document.querySelector(s);
@@ -765,7 +767,13 @@ async function keepAwake(){
 }
 
 // Scanned the QR code and already used this phone before? Join straight away.
-SPRITES.loadArt().then(() => { if (S.joined) renderPick(); });
+SPRITES.loadArt(/^(C|D|U01|U05)/).then(() => {
+  const logo = SPRITES.img('U01');
+  if (logo) document.querySelector('#joinScreen h1').innerHTML = '<img class="logo" alt="Room Racers" src="' + logo.src + '">';
+  const bg = SPRITES.img('U05');
+  if (bg) $('#pick').style.backgroundImage = 'url(' + bg.src + ')';
+  if (S.joined) renderPick();
+});
 if ($('#name').value && $('#code').value.length === 4 && params.get('code')) tryJoin();
 else if (!$('#name').value) $('#name').focus();
 })();

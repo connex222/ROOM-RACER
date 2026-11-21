@@ -13,7 +13,7 @@ const path = require('path');
 const os = require('os');
 const { WebSocketServer, WebSocket } = require('ws');
 
-const VERSION = '0.5.2';
+const VERSION = '0.6.0';
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC = path.join(__dirname, 'public');
 const ART = path.join(PUBLIC, 'art');

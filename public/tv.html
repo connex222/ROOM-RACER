@@ -66,6 +66,13 @@ h1{font-size:clamp(40px,6vw,68px);line-height:1;margin:6px 0 18px;font-weight:90
 .roster .who{min-width:0;line-height:1.15}
 .roster .who small{display:block;font-size:14px;font-weight:700;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .roster .tag{margin-left:auto;font-size:14px;font-weight:900;background:#2ECC71;color:#1E1A2B;border:2px solid #1E1A2B;border-radius:8px;padding:2px 7px;white-space:nowrap}
+.logo{display:block;width:min(420px,70%);height:auto;margin:-10px 0 4px}
+.podium-art{position:relative;width:min(100%,680px);aspect-ratio:3 / 2;margin:0 auto 12px;background-size:cover;background-position:center;
+  border:4px solid #1E1A2B;border-radius:16px;overflow:hidden;display:block}
+.pa-av{position:absolute;transform:translate(-50%,-100%);aspect-ratio:1;object-fit:contain;filter:drop-shadow(0 6px 4px rgba(0,0,0,.35))}
+.pa-name{position:absolute;transform:translate(-50%,0);background:#FFFFFF;color:#1E1A2B;border:3px solid #1E1A2B;border-radius:10px;
+  padding:1px 10px;font-weight:900;font-size:clamp(14px,1.6vw,19px);white-space:nowrap;max-width:30%;overflow:hidden;text-overflow:ellipsis}
+.trophy{width:1.6em;height:1.6em;vertical-align:-0.4em;margin-right:8px}
 .podium{display:flex;align-items:flex-end;justify-content:center;gap:14px;margin:4px 0 14px}
 .step{display:flex;flex-direction:column;align-items:center;width:clamp(110px,14vw,170px);text-align:center}
 .step img{width:78%;aspect-ratio:1;border-radius:50%;margin-bottom:6px}
@@ -183,7 +190,7 @@ td.num{font-variant-numeric:tabular-nums}
           <div><strong>Keyboard</strong><br><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> or <kbd>W</kbd><kbd>S</kbd><kbd>A</kbd><kbd>D</kbd></div>
           <div><strong>During a race</strong><br><kbd>P</kbd> pause <kbd>Esc</kbd> back here <kbd>M</kbd> sound</div>
           <div><button class="choice" id="soundBtn" aria-pressed="true">Sound on</button></div>
-          <div>Version 0.5.2</div>
+          <div>Version 0.6.0</div>
         </div>
       </section>
     </div>
@@ -242,10 +249,10 @@ const SPRITES = (() => {
   /* ---------- ChatGPT art ---------- */
   const art = {};          // id -> loaded Image
   let artReady = Promise.resolve();
-  function loadArt(){
+  function loadArt(only){
     artReady = fetch('/art/list', { cache: 'no-store' })
       .then(r => r.ok ? r.json() : [])
-      .then(list => Promise.all((Array.isArray(list) ? list : []).map(id => new Promise(res => {
+      .then(list => Promise.all((Array.isArray(list) ? list : []).filter(id => !only || only.test(id)).map(id => new Promise(res => {
         const img = new Image();
         img.onload = () => { art[id] = img; res(); };
         img.onerror = () => res();
@@ -332,7 +339,7 @@ const SPRITES = (() => {
     const def = CARS[type] || CARS[0], img = art[def.id];
     if (img){
       c.save(); c.rotate(Math.PI / 2);
-      c.drawImage(img, -40, -40, 80, 80);
+      c.drawImage(img, -43, -43, 86, 86);
       c.restore();
       return;
     }
@@ -450,7 +457,7 @@ const SPRITES = (() => {
     return cache[key];
   }
 
-  return { CARS, DRIVERS, loadArt, ready: () => artReady, drawCar, drawDriver, driverURL, carURL };
+  return { CARS, DRIVERS, loadArt, ready: () => artReady, img: id => art[id] || null, drawCar, drawDriver, driverURL, carURL };
 })();
 
 
@@ -603,7 +610,7 @@ const SAMPLE_STEP = 8;
 const RUNOFF = 100;          // forgiving strip between tape and wall
 const KICK = 40;             // kitchen kickboard depth round the edge
 const CAR_R = 20;
-const VIEW_SPAN = 760;
+const VIEW_SPAN = 640;
 const MAX_SEATS = 6;
 const PHONE_GRACE_MS = 30000;
 
@@ -1024,6 +1031,14 @@ function drawZone(c, z, R){
   }
 }
 function drawBlock(c, b){
+  const brick = b.look === 'brick' && SPRITES.img('P06');
+  if (brick){
+    c.save(); c.translate(b.x, b.y); c.rotate(b.rot);
+    c.fillStyle = 'rgba(30,26,43,.25)'; c.beginPath(); c.ellipse(8, 10, 44, 30, 0, 0, Math.PI * 2); c.fill();
+    c.drawImage(brick, -50, -50, 100, 100);
+    c.restore();
+    return;
+  }
   if (b.look === 'cushion'){
     slab(c, b.x, b.y, 96, 96, 30, '#9DD9D2', b.rot, 7);
     c.fillStyle = INK; circle(c, b.x, b.y, 7); c.fill();
@@ -1078,10 +1093,28 @@ function renderTrack(def, halfW, hz){
     c.restore();
   }
 
-  hz.zones.forEach(z => drawZone(c, z, R));
+  hz.zones.forEach(z => {
+    const pic = { oil: 'P02', water: 'P03', milk: 'P03' }[z.look], img = pic && SPRITES.img(pic);
+    if (!img){ drawZone(c, z, R); return; }
+    const step = Math.max(4, Math.round(z.half * 1.25 / SAMPLE_STEP)), size = z.half * 2.3;
+    for (let k = Math.round(step / 2); k <= z.len; k += step){
+      const p = path.pts[(z.idx + k) % path.N], j = (R() - 0.5) * z.half * 0.4;
+      c.save(); c.translate(p.x + p.nx * (z.off + j), p.y + p.ny * (z.off + j)); c.rotate(R() * Math.PI * 2);
+      if (z.look === 'milk') c.filter = 'grayscale(1) brightness(2.1) contrast(0.85)';
+      c.drawImage(img, -size / 2, -size / 2, size, size);
+      c.restore();
+    }
+  });
 
   BOOSTS.forEach(b => {
-    const p = path.pts[b], len = BOOST_LEN * SAMPLE_STEP, w = halfW * 1.1;
+    const p = path.pts[b], len = BOOST_LEN * SAMPLE_STEP, w = halfW * 1.1, padImg = SPRITES.img('P01');
+    if (padImg){
+      const mid = path.pts[(b + Math.round(BOOST_LEN / 2)) % path.N], sz = Math.max(len * 1.25, w);
+      c.save(); c.translate(mid.x, mid.y); c.rotate(mid.ang + Math.PI / 2);
+      c.drawImage(padImg, -sz / 2, -sz / 2, sz, sz);
+      c.restore();
+      return;
+    }
     c.save(); c.translate(p.x, p.y); c.rotate(p.ang);
     c.fillStyle = '#22D3E6'; rr(c, 0, -w / 2, len, w, 12); c.fill();
     c.lineWidth = 6; c.strokeStyle = INK; c.stroke();
@@ -1100,6 +1133,12 @@ function renderTrack(def, halfW, hz){
     c.fillRect(-sq + r * sq, -halfW + q * sq, sq, Math.min(sq, halfW * 2 - q * sq));
   }
   c.restore();
+
+  const flags = SPRITES.img('P09');
+  if (flags) [-1, 1].forEach(side => {
+    const d = (halfW + RUNOFF * 0.55) * side, sz = 110;
+    c.drawImage(flags, s0.x + s0.nx * d - sz / 2, s0.y + s0.ny * d - sz / 2, sz, sz);
+  });
 
   hz.blocks.forEach(b => drawBlock(c, b));
 
@@ -1671,8 +1710,20 @@ function showResults(){
   const stepHTML = (who, n) => !who ? '' :
     '<div class="step' + (n === 0 ? ' first' : '') + '"><img alt="" src="' + SPRITES.driverURL(who.driver, n === 0, 200) + '">' +
     '<div class="nm">' + esc(who.name) + '</div><div class="books" style="height:' + [110, 74, 48][n] + 'px"><span>' + (n + 1) + '</span></div></div>';
-  $('#podium').innerHTML = stepHTML(podiumList[1], 1) + stepHTML(podiumList[0], 0) + stepHTML(podiumList[2], 2);
-  $('#headline').innerHTML = headline;
+  const podiumPic = SPRITES.img('U03');
+  if (podiumPic){
+    // left %, top of the book pile %, avatar width % (measured on the picture)
+    const spots = [[50, 31, 26], [21, 41, 20], [79, 44, 20]];
+    const face = (d, win) => { const im = SPRITES.img(SPRITES.DRIVERS[d].ids[win ? 1 : 0]); return im ? im.src : SPRITES.driverURL(d, win, 220); };
+    $('#podium').innerHTML = '<div class="podium-art" style="background-image:url(' + podiumPic.src + ')">' +
+      [1, 0, 2].map(n => { const who = podiumList[n]; if (!who) return ''; const [l, t, w] = spots[n];
+        return '<img class="pa-av" alt="" style="left:' + l + '%;top:' + t + '%;width:' + w + '%" src="' + face(who.driver, n === 0) + '">' +
+          '<span class="pa-name" style="left:' + l + '%;top:' + (t + 3) + '%">' + esc(who.name) + '</span>'; }).join('') + '</div>';
+  } else {
+    $('#podium').innerHTML = stepHTML(podiumList[1], 1) + stepHTML(podiumList[0], 0) + stepHTML(podiumList[2], 2);
+  }
+  const trophy = SPRITES.img('U04');
+  $('#headline').innerHTML = (trophy ? '<img class="trophy" alt="" src="' + trophy.src + '">' : '') + headline;
   $('#resTitle').textContent = gp && gp.done ? 'Grand Prix champion' : 'Results';
   $('#resBody').innerHTML = order.map((c, n) =>
     '<tr><td>' + ordinal(n + 1) + '</td>' +
@@ -1967,8 +2018,8 @@ function layout(n){
 /* Each car is drawn by SPRITES (ChatGPT art when present). A ring in the player's colour sits underneath. */
 function drawCar(c, car){
   c.save(); c.translate(car.x, car.y);
-  c.fillStyle = 'rgba(20,15,30,.28)'; c.beginPath(); c.ellipse(7, 8, 32, 22, car.a, 0, Math.PI * 2); c.fill();
-  c.lineWidth = 7; c.strokeStyle = car.colour; c.beginPath(); c.ellipse(0, 0, 40, 28, car.a, 0, Math.PI * 2); c.stroke();
+  c.fillStyle = 'rgba(20,15,30,.28)'; c.beginPath(); c.ellipse(7, 8, 38, 22, car.a, 0, Math.PI * 2); c.fill();
+  c.lineWidth = 7; c.strokeStyle = car.colour; c.beginPath(); c.ellipse(0, 0, 47, 30, car.a, 0, Math.PI * 2); c.stroke();
   c.rotate(car.a);
   if (car.boostT > 0){
     c.fillStyle = 'rgba(34,211,230,.85)';
@@ -1976,7 +2027,7 @@ function drawCar(c, car){
   }
   SPRITES.drawCar(c, car.type, car.colour);
   c.restore();
-  c.save(); c.translate(car.x, car.y - 36);
+  c.save(); c.translate(car.x, car.y - 46);
   c.fillStyle = car.colour; c.beginPath(); c.arc(0, 0, 13, 0, Math.PI * 2); c.fill();
   c.lineWidth = 4; c.strokeStyle = INK; c.stroke();
   c.font = '900 16px ' + FONT; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillStyle = '#FFFFFF';
@@ -2064,6 +2115,13 @@ function drawSpare(r){
 }
 
 function drawPreview(){
+  const bg = SPRITES.img('U02');
+  if (bg){
+    const z = 1.06 + Math.sin(previewT * 0.15) * 0.04;
+    const sc = Math.max(W / bg.width, H / bg.height) * z;
+    ctx.drawImage(bg, (W - bg.width * sc) / 2, (H - bg.height * sc) / 2, bg.width * sc, bg.height * sc);
+    return;
+  }
   const sc = Math.min(W / WORLD_W, H / WORLD_H) * (1.04 + Math.sin(previewT * 0.4) * 0.03);
   ctx.save();
   ctx.fillStyle = '#4A3A30'; ctx.fillRect(0, 0, W, H);
@@ -2110,7 +2168,13 @@ function frame(now){
 }
 renderLobby();
 connect();
-SPRITES.loadArt().then(() => { renderLobby(); });
+SPRITES.loadArt().then(() => {
+  Object.keys(trackCache).forEach(k => delete trackCache[k]);
+  selectTrack(def.id, sel.diff);
+  const logo = SPRITES.img('U01');
+  if (logo) $('#menuTitle').innerHTML = '<img class="logo" alt="Room Racers" src="' + logo.src + '">';
+  renderLobby();
+});
 $('#startBtn').focus();
 requestAnimationFrame(frame);
 })();
