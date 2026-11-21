@@ -30,7 +30,7 @@ body{margin:0;height:100%;background:var(--bg);color:var(--ink);overflow:hidden;
   font-family:ui-rounded,"Arial Rounded MT Bold","Nunito","Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;
   -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
 .screen{height:100%}
-.screen[hidden]{display:none}
+[hidden]{display:none !important}
 
 /* Join */
 #joinScreen{display:flex;align-items:center;justify-content:center;padding:20px;overflow:auto}
@@ -104,7 +104,7 @@ input:focus{outline:4px solid var(--tape);outline-offset:2px;border-color:#1E1A2
     <button class="big" id="joinBtn">Join race</button>
     <p class="stage" id="joinStage" aria-live="polite"></p>
     <p class="error" id="joinError" role="alert"></p>
-    <p class="ver">Version 0.3.3 · <a href="/test" style="color:inherit">connection test</a></p>
+    <p class="ver">Version 0.3.4 · <a href="/test" style="color:inherit">connection test</a></p>
   </div>
 </main>
 
